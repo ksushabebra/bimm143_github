@@ -1,0 +1,164 @@
+---
+title: "Class 10: Structural Bioinformatics (Pt. 1)"
+author: "Ksenia Mekhonoshina"
+format: pdf
+editor: visual
+---
+
+## The PDB database
+
+The [Protein Data Bank (PDB)](https://www.rcsb.org/)
+
+
+```{r}
+stats <- read.csv("PDB Stats Structural Bioinformatics.csv", row.names=1)
+stats
+```
+> Q1: What percentage of structures in the PDB are solved by X-Ray and Electron Microscopy.
+
+```{r}
+n.sums <- colSums(stats)
+n.sums/n.sums["Total"]
+round(n.sums, digits=2)
+```
+
+X-Ray: 80.9%
+EM: 12.8%
+
+> Q2: What proportion of structures in the PDB are protein?
+
+85.9%
+
+
+## Using Molstar
+
+We can use the main [Molstar Viewer Online](https://molstar.org/viewer/):
+![](Mol Viewer 1HSG.png)
+
+
+> Q. Generate and insert an image of teh HIV-pr cartoon colored by secondary structure, showing the inhibitor (ligand) in ball and stick. 
+
+![](Mol Viewer 1HSG copy.png)
+
+
+> Q. One final image showing catalytic APS 25 as ball and stick and the all-important 
+![](MOL V IEW APS.png)
+
+
+## The Bio3D package for structural bioinformatics
+
+```{r}
+library(bio3d)
+hiv <- read.pdb("1hsg")
+hiv
+```
+
+```{r}
+head(hiv$atom)
+```
+
+```{r}
+pdbseq(hiv)
+```
+
+Let's try out the new **bio3dview** package that is not yet on CRAN. 
+We can use the **remotes** package to install any R package from GitHub. 
+
+## Quick viewing of PDBs
+
+```{r}
+library(bio3dview)
+sele <- atom.select(hiv, resno=25)
+#view.pdb(hiv, backgroundColor = "lightpink", highlight = sele, highlight.style = "spacefill")
+```
+### Prediction of Protein Flexibility
+
+```{r}
+adk <- read.pdb("6s36")
+m <- nma(adk)
+plot(m)
+```
+
+Lets write out our results as a trajectory movie:
+```{r}
+mktrj(m, file="adk_m7.pdb")
+```
+```{r}
+#view.nma(m)
+```
+
+## Comparative structure analysis with PCA
+
+Let's start with a database id "1ake_A"
+
+```{r}
+library(bio3d)
+id <- "1ake_A" 
+aa <- get.seq(id)
+```
+```{r}
+aa
+```
+
+```{r}
+blast <- blast.pdb(aa)
+```
+
+Lets have a peak:
+```{r}
+head( blast$hit.tbl)
+```
+
+```{r}
+hits <- plot(blast)
+```
+
+Lets look at our top hits:
+```{r}
+head(hits$pdb.id)
+```
+
+Now we can download these "top hits", these will all be ADK structures in the PDB database.
+
+```{r}
+files <- get.pdb(hits$pdb.id, path ="pdbs", split=TRUE, gzip=TRUE)
+```
+
+We need one package from BioConducor. To set this up we first need to install a package called **"BiocManager"** from CRAN.
+
+Now we can use the `install()` function from this package like this:  `BiocManager::install("msa")`
+```{r}
+pdbs<- pdbaln(files, fit = TRUE, exefile="msa")
+
+```
+Lets have a peak at our structures after "fitting" or superposing: 
+```{r}
+library(bio3dview)
+view.pdbs(pdbs)
+```
+```{r}
+view.pdbs(pdbs, colorScheme = "residue")
+```
+
+We can run `rmsd()`, `rmsf()` and the `pca()`
+```{r}
+pc.xray <- pca(pdbs)
+plot(pc.xray)
+```
+```{r}
+plot(pc.xray, 1:2)
+```
+
+Finally, let's make a movie of the major "motion" or structural difference in the dataset - we call this a "trajectory". 
+
+```{r}
+mktrj(pc.xray, file="results.pdb")
+
+```
+
+
+```{r}
+n.sums["Total"]
+```
+> Q. Total Number of entries?
+

@@ -1,0 +1,18 @@
+---
+title: "Class 08 Mini-Project"
+format: html
+editor: visual
+---
+
+## Preparing the data
+
+Let's start with downloading and importing our data, using `read.cvs()`
+
+```{r}
+read.csv("Wisconsin Cancer Data (1).csv")
+fna.data <- "Wisconsin Cancer Data (1).csv"
+wisc.df<-read.csv(fna.data, row.names = 1)
+```
+
+
+
