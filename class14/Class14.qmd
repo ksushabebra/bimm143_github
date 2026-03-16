@@ -1,0 +1,317 @@
+---
+title: "class13"
+author: "Ksenia Mekhonoshina"
+format: pdf
+editor: visual
+---
+##Background
+
+Today we will perform an RNAseq analysis on the effects of dexamethasone ("dex"), a common glucocorticoid steroid, working on  airway smooth muscle. 
+
+CRISPLD2 is a gene that encodes a secreted protein known to be involved in lung development, and SNPs in this gene in previous GWAS studies are associated with inhaled corticosteroid resistance and bronchodilator response in asthma patients.
+
+## Import countData and colData
+
+
+```{r}
+counts <- read.csv("AS.csv", row.names=1)
+metadata <-read.csv("Airway Metadata Class 13.csv")
+```
+
+Now, lets take a look at the head of each:
+
+```{r}
+head(metadata)
+```
+```{r}
+head(counts)
+```
+
+> Q1.  How many genes are in this dataset?
+
+There are `r nrow(counts)` genes in this dataset. 
+
+> Q2. How many ‘control’ cell lines do we have?
+
+```{r}
+sum(metadata$dex == "control")
+```
+
+There are 4 control cell lines. 
+
+## Extract and Summarize the control sample
+
+To find where controls are, we need the metabase 
+```{r}
+control <- metadata[metadata[,"dex"]=="control",]
+control.counts <- counts[ ,control$id]
+control.mean <- rowSums( control.counts )/4 
+head(control.mean)
+```
+
+> Q3. How would you make the above code in either approach more robust? Is there a function that could help here? `rowMeans()`
+
+> Q4. Follow the same procedure for the treated samples (i.e. calculate the mean per gene across drug treated samples and assign to a labeled vector called treated.mean) 
+
+Let's do the same for the treated sample below: 
+
+## Extract and Summarize the treated (i.e drug) samples
+
+```{r}
+treated <- metadata[metadata$dex =="treated",]
+treated.counts <- counts[ ,treated$id]
+treated.mean <- rowSums( treated.counts )/4 
+head(treated.mean)
+```
+
+Lets store these results together in a new dataframe called `meancounts`
+```{r}
+meancounts <- data.frame(control.mean, treated.mean)
+colSums(meancounts)
+```
+
+> Q5. (a) Create a scatter plot showing the mean of the treated samples against the mean of the control samples. 
+
+Lets make a graph to visualise our data:
+
+```{r}
+plot(meancounts[,1], meancounts[,2])
+```
+
+> Q5 (b).You could also use the ggplot2 package to make this figure producing the plot below. What geom_?() function would you use for this plot? 
+
+We would use geom_point():
+
+```{r}
+library(ggplot2)
+
+ggplot(meancounts) +
+  aes(control.mean, treated.mean) +
+  geom_point()
+```
+> Q6. Try plotting both axes on a log scale. What is the argument to plot() that allows you to do this?
+
+Lets make a *log-log* plot to draw out this skewed data and see what is going on. 
+
+```{r}
+plot(meancounts[,1], meancounts[,2], log="xy",
+     xlab="log control counts",
+     ylab="log of treated counts")
+```
+
+We often log2 transformations when dealing with this sort of data. This is due to the log2 staying 0 if there is no change, if it doubles log2 will be 1, if halved will be -1.
+
+```{r}
+meancounts$log2fc <- log2(meancounts$treated.mean / 
+                     meancounts$control.mean)
+head(meancounts)
+```
+
+Lets get rid of zero count genes
+
+```{r}
+zero.vals <- which(meancounts[,1:2]==0, arr.ind=TRUE)
+
+to.rm <- unique(zero.vals[,1])
+mycounts <- meancounts[-to.rm,]
+head(mycounts)
+```
+
+> Q. How many genes are remaining?
+
+There are 21817 genes remaining
+
+```{r}
+nrow(mycounts)
+```
+
+> Q7.  What is the purpose of the arr.ind argument in the which() function call above? Why would we then take the first column of the output and need to call the unique() function?
+
+It will tell us which genes (rows) and samples (columns) have zero counts. 
+
+## Use fold change to see up and down regulated genes 
+
+A common threshold used for calling something differentially expressed is a log2(FoldChange) of greater than 2 or less than -2. Let’s filter the dataset both ways to see how many genes are up or down-regulated.
+
+```{r}
+up.ind <- mycounts$log2fc > 2
+down.ind <- mycounts$log2fc < (-2)
+```
+
+> Q8. Using the up.ind vector above can you determine how many up regulated genes we have at the greater than 2 fc level?
+
+```{r}
+sum(up.ind)
+```
+250 genes are upregulated
+
+> Q9. Using the down.ind vector above can you determine how many down regulated genes we have at the greater than 2 fc level?
+
+```{r}
+sum(down.ind)
+```
+367 genes are downregulated 
+
+> Q10. Do you trust these results? Why or why not?
+
+No, because we don't know the statistical side of it, what about the significance of these changes?
+
+## Setting up for DESeq
+
+Let’s do this the right way. DESeq2 is an R package specifically for analyzing count-based NGS data like RNA-seq. It is available from Bioconductor. Bioconductor is a project to provide tools for analyzing high-throughput genomic data including RNA-seq, ChIP-seq and arrays. 
+
+```{r}
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(countData=counts, 
+                              colData=metadata, 
+                              design=~dex)
+dds
+```
+
+## Principal Component Analysis (PCA)
+
+```{r}
+vsd <- vst(dds, blind = FALSE)
+plotPCA(vsd, intgroup = c("dex"))
+```
+
+We can also build the PCA plot from scratch using the ggplot2 package
+
+```{r}
+pcaData <- plotPCA(vsd, intgroup=c("dex"), returnData=TRUE)
+head(pcaData)
+```
+
+And now calculate the percent variance per PC
+
+```{r}
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+```
+
+```{r}
+ggplot(pcaData) +
+  aes(x = PC1, y = PC2, color = dex) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  theme_bw()
+```
+
+## DESeq analysis
+
+Let’s run the DESeq analysis pipeline on the dataset, and reassign the resulting object back to the same variable.
+
+```{r}
+dds <- DESeq(dds)
+results(dds)
+```
+
+### Getting Results
+
+```{r}
+res <- results(dds)
+res
+```
+
+```{r}
+as.data.frame(res) 
+```
+We can summarize some basic tallies using the summary function.
+
+```{r}
+summary(res)
+```
+
+The results function contains a number of arguments to customize the results table. By default the argument alpha is set to 0.1. If the adjusted p value cutoff will be a value other than 0.1, alpha should be set to that value:
+
+```{r}
+res05 <- results(dds, alpha=0.05)
+summary(res05)
+```
+
+## Add Annotations Data
+To make sense of our results we need to know what differentially expressed genes are, and what biological pathways and processes they are involved in. 
+
+Lets start by mapping our ENSEMBLE ids to the more conventonal gene SYMBOL. 
+
+We will use two bioconductor packages for this "mapping" **AnnotationDBI** and **org.Hs.eg.db**
+
+We will first need to install these from bioconductor with `BiocManager::install("AnnotationDbi")`
+
+```{r}
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+```
+
+```{r}
+columns(org.Hs.eg.db)
+```
+
+```{r}
+res$symbol <- mapIds(org.Hs.eg.db, 
+              keys = rownames(res), #Our ids
+              keytype="ENSEMBL", #Their format
+              column = "SYMBOL") #What I want to translate to
+```
+```{r}
+head(res)
+```
+
+
+```{r}
+write.csv(res, file="results_annotated.csv")
+```
+
+
+## Pathway Analysis
+
+Now we know the gene names (gene symbols) and their entrez IDs, we can find out what pathways they are involved in. This is called "pathways analysis" or **Gene Set Enrichment**. 
+
+We will use the **gage** package, and the **pathviewer** package to do this analysis (but note: there are looooaads of others). 
+
+```{r, message = FALSE}
+library(gage)
+library(gageData)
+library(pathview)
+```
+
+
+```{r}
+data(kegg.sets.hs)
+head(kegg.sets.hs, 2)
+```
+
+To run our pathway analysis, we will use the **gage()** function. It wants two main required inputs. First, it wants a vector of importance (log2 fold change values); and the gene sets to check overlap for.
+
+```{r}
+foldchanges <- res$log2FoldChange
+names(foldchanges) <- res$symbol
+head(foldchanges)
+```
+KEGG speaks entrez (i.e. uses ENTREZID format), not gene symbol format
+
+```{r}
+names(foldchanges) <- res$entrez
+```
+
+
+```{r}
+keggres = gage (foldchanges, gsets=kegg.sets.hs)
+```
+
+```{r}
+head(keggres$less, 5)
+```
+
+Lets make a figure of one of these pathways with our DEGs highlighted:
+
+```{r}
+pathview(foldchanges, pathway.id="hsa05310")
+```
+![](hsa05310.pathview.png)
+
+
+
+
+
